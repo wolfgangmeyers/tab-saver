@@ -33,13 +33,13 @@ function getCurrentWindowId(): Promise<number> {
 
 export async function saveAll(): Promise<Result> {
   try {
-    const [tabs, groups] = await Promise.all([queryAllTabs(), queryAllGroups()]);
+    const [existingState, tabs, groups] = await Promise.all([loadState(), queryAllTabs(), queryAllGroups()]);
 
     const ungroupedTabs: SavedTab[] = tabs
       .filter((tab) => tab.groupId === -1)
       .map(tabToSavedTab);
 
-    const savedGroups: SavedGroup[] = groups.map((group) => {
+    const openGroups: SavedGroup[] = groups.map((group) => {
       const groupTabsRaw = tabs
         .filter((tab) => tab.groupId === group.id)
         .sort((a, b) => a.index - b.index);
@@ -52,10 +52,22 @@ export async function saveAll(): Promise<Result> {
       };
     });
 
+    const baseGroups = existingState?.groups ?? [];
+    const mergedGroups = [...baseGroups];
+
+    for (const openGroup of openGroups) {
+      const existingIndex = mergedGroups.findIndex((group) => group.title === openGroup.title);
+      if (existingIndex >= 0) {
+        mergedGroups[existingIndex] = openGroup;
+      } else {
+        mergedGroups.push(openGroup);
+      }
+    }
+
     const state: SavedState = {
       savedAt: Date.now(),
       ungroupedTabs,
-      groups: savedGroups,
+      groups: mergedGroups,
     };
 
     await saveState(state);

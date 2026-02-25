@@ -95,9 +95,32 @@ const baseState: SavedState = {
 describe('session', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockStorageGet(null);
   });
 
   describe('saveAll', () => {
+    it('with no existing state creates state from scratch', async () => {
+      const tabs: chrome.tabs.Tab[] = [
+        { id: 1, index: 0, windowId: 1, highlighted: false, active: true, pinned: false, incognito: false, selected: false, groupId: -1, url: 'https://ungrouped.com', title: 'Ungrouped' },
+        { id: 2, index: 1, windowId: 1, highlighted: false, active: false, pinned: false, incognito: false, selected: false, groupId: 10, url: 'https://work.com', title: 'Work' },
+      ];
+      const groups: chrome.tabGroups.TabGroup[] = [
+        { id: 10, windowId: 1, title: 'Work', color: 'blue' as chrome.tabGroups.ColorEnum, collapsed: false },
+      ];
+      chrome.tabs.query.mockImplementation((_q: unknown, cb: (tabs: chrome.tabs.Tab[]) => void) => cb(tabs));
+      chrome.tabGroups.query.mockImplementation((_q: unknown, cb: (groups: chrome.tabGroups.TabGroup[]) => void) => cb(groups));
+      mockStorageSet();
+
+      await saveAll();
+
+      const savedData = (chrome.storage.local.set as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(savedData.savedState.groups).toHaveLength(1);
+      expect(savedData.savedState.groups[0].title).toBe('Work');
+      expect(savedData.savedState.ungroupedTabs).toEqual([
+        { url: 'https://ungrouped.com', title: 'Ungrouped', pinned: false, index: 0 },
+      ]);
+    });
+
     it('queries all tabs and groups', async () => {
       chrome.tabs.query.mockImplementation((_q: unknown, cb: (tabs: chrome.tabs.Tab[]) => void) => cb([]));
       chrome.tabGroups.query.mockImplementation((_q: unknown, cb: (groups: chrome.tabGroups.TabGroup[]) => void) => cb([]));
@@ -195,6 +218,84 @@ describe('session', () => {
 
       const result = await saveAll();
       expect(result).toBeNull();
+    });
+
+    it('updates matching open group but leaves unmatched saved groups untouched', async () => {
+      const tabs: chrome.tabs.Tab[] = [
+        { id: 1, index: 0, windowId: 1, highlighted: false, active: false, pinned: false, incognito: false, selected: false, groupId: 10, url: 'https://new-work.com', title: 'New Work' },
+      ];
+      const groups: chrome.tabGroups.TabGroup[] = [
+        { id: 10, windowId: 1, title: 'Work', color: 'red' as chrome.tabGroups.ColorEnum, collapsed: true },
+      ];
+      mockStorageGet(baseState);
+      chrome.tabs.query.mockImplementation((_q: unknown, cb: (tabs: chrome.tabs.Tab[]) => void) => cb(tabs));
+      chrome.tabGroups.query.mockImplementation((_q: unknown, cb: (groups: chrome.tabGroups.TabGroup[]) => void) => cb(groups));
+      mockStorageSet();
+
+      await saveAll();
+
+      const savedData = (chrome.storage.local.set as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      const savedGroups = savedData.savedState.groups;
+      const work = savedGroups.find((g: { title: string }) => g.title === 'Work');
+      const personal = savedGroups.find((g: { title: string }) => g.title === 'Personal');
+
+      expect(savedGroups).toHaveLength(2);
+      expect(work).toBeDefined();
+      expect(personal).toBeDefined();
+      expect(work!.color).toBe('red');
+      expect(work!.collapsed).toBe(true);
+      expect(work!.tabs[0].url).toBe('https://new-work.com');
+      expect(personal!.tabs[0].url).toBe('https://personal.com');
+    });
+
+    it('adds currently open groups that are not already saved', async () => {
+      const existingState: SavedState = {
+        savedAt: 1000,
+        ungroupedTabs: [],
+        groups: [
+          {
+            title: 'Old',
+            color: 'grey',
+            collapsed: false,
+            tabs: [{ url: 'https://old.com', title: 'Old', pinned: false, index: 0 }],
+          },
+        ],
+      };
+      const tabs: chrome.tabs.Tab[] = [
+        { id: 1, index: 1, windowId: 1, highlighted: false, active: false, pinned: false, incognito: false, selected: false, groupId: 20, url: 'https://new.com', title: 'New' },
+      ];
+      const groups: chrome.tabGroups.TabGroup[] = [
+        { id: 20, windowId: 1, title: 'New', color: 'green' as chrome.tabGroups.ColorEnum, collapsed: false },
+      ];
+      mockStorageGet(existingState);
+      chrome.tabs.query.mockImplementation((_q: unknown, cb: (tabs: chrome.tabs.Tab[]) => void) => cb(tabs));
+      chrome.tabGroups.query.mockImplementation((_q: unknown, cb: (groups: chrome.tabGroups.TabGroup[]) => void) => cb(groups));
+      mockStorageSet();
+
+      await saveAll();
+
+      const savedData = (chrome.storage.local.set as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      const savedGroups = savedData.savedState.groups;
+      expect(savedGroups).toHaveLength(2);
+      expect(savedGroups.find((g: { title: string }) => g.title === 'Old')).toBeDefined();
+      expect(savedGroups.find((g: { title: string }) => g.title === 'New')).toBeDefined();
+    });
+
+    it('replaces ungroupedTabs with currently open ungrouped tabs', async () => {
+      const tabs: chrome.tabs.Tab[] = [
+        { id: 1, index: 0, windowId: 1, highlighted: false, active: true, pinned: false, incognito: false, selected: false, groupId: -1, url: 'https://fresh.com', title: 'Fresh' },
+      ];
+      mockStorageGet(baseState);
+      chrome.tabs.query.mockImplementation((_q: unknown, cb: (tabs: chrome.tabs.Tab[]) => void) => cb(tabs));
+      chrome.tabGroups.query.mockImplementation((_q: unknown, cb: (groups: chrome.tabGroups.TabGroup[]) => void) => cb([]));
+      mockStorageSet();
+
+      await saveAll();
+
+      const savedData = (chrome.storage.local.set as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(savedData.savedState.ungroupedTabs).toEqual([
+        { url: 'https://fresh.com', title: 'Fresh', pinned: false, index: 0 },
+      ]);
     });
   });
 
