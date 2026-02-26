@@ -230,3 +230,20 @@ export async function resaveGroup(title: string): Promise<Result> {
     return { error: String(err) };
   }
 }
+
+export async function saveTab(url: string, title: string, pinned: boolean): Promise<Result> {
+  try {
+    const state = await loadState();
+    const base = state ?? { savedAt: Date.now(), ungroupedTabs: [], groups: [] };
+    const tab: SavedTab = { url, title, pinned, index: 0 };
+    const existing = base.ungroupedTabs.findIndex((t) => t.url === url);
+    const updatedTabs =
+      existing >= 0
+        ? base.ungroupedTabs.map((t, i) => (i === existing ? tab : t))
+        : [...base.ungroupedTabs, tab];
+    await saveState({ ...base, ungroupedTabs: updatedTabs });
+    return null;
+  } catch (err) {
+    return { error: String(err) };
+  }
+}
