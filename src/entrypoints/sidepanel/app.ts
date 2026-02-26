@@ -31,6 +31,8 @@ interface LiveTab {
 let errorMessage = '';
 let allCollapsed = false;
 let savedClosedCollapsed = true;
+let groupsSectionCollapsed = false;
+let ungroupedSectionCollapsed = false;
 const groupExpanded = new Map<string, boolean>();
 
 function setError(msg: string) {
@@ -64,7 +66,14 @@ function btn(text: string, className: string, onClick: () => void): HTMLButtonEl
 }
 
 function normalizeUrl(url: string | undefined): string {
-  return url ?? '';
+  if (!url) return '';
+  try {
+    const u = new URL(url);
+    u.hash = '';
+    return u.toString().replace(/\/$/, '');
+  } catch {
+    return url.replace(/#.*$/, '').replace(/\/$/, '');
+  }
 }
 
 function uniqueSortedUrls(urls: string[]): string[] {
@@ -116,7 +125,7 @@ async function buildLiveModel(): Promise<{
   const savedGroups = state?.groups ?? [];
   const savedUngroupedTabs = state?.ungroupedTabs ?? [];
   const savedGroupByTitle = new Map(savedGroups.map((group) => [group.title, group]));
-  const savedUngroupedUrlSet = new Set(savedUngroupedTabs.map((tab) => tab.url));
+  const savedUngroupedUrlSet = new Set(savedUngroupedTabs.map((tab) => normalizeUrl(tab.url)));
 
   const tabsByGroupId = new Map<number, chrome.tabs.Tab[]>();
   for (const tab of tabs) {
@@ -166,7 +175,7 @@ async function buildLiveModel(): Promise<{
     .filter((group) => !openGroupTitles.has(group.title))
     .map((group) => ({ title: group.title, count: group.tabs.length }));
 
-  const closedTabs = savedUngroupedTabs.filter((tab) => !openTabUrls.has(tab.url));
+  const closedTabs = savedUngroupedTabs.filter((tab) => !openTabUrls.has(normalizeUrl(tab.url)));
 
   return { liveGroups, liveUngroupedTabs, closedGroups, closedTabs };
 }
@@ -204,7 +213,16 @@ function renderActionBar(liveGroups: LiveGroup[]): HTMLElement {
 
 function renderGroupsSection(liveGroups: LiveGroup[]): HTMLElement {
   const section = el('div', { className: 'section' });
-  section.appendChild(el('div', { className: 'section-title' }, 'TAB GROUPS'));
+  const title = el('div', { className: 'section-title' }, `${groupsSectionCollapsed ? '▸' : '▾'} TAB GROUPS`);
+  title.addEventListener('click', () => {
+    groupsSectionCollapsed = !groupsSectionCollapsed;
+    render();
+  });
+  section.appendChild(title);
+
+  if (groupsSectionCollapsed) {
+    return section;
+  }
 
   if (liveGroups.length === 0) {
     section.appendChild(el('div', { className: 'empty-msg' }, 'No open tab groups.'));
@@ -298,7 +316,20 @@ function renderGroupsSection(liveGroups: LiveGroup[]): HTMLElement {
 
 function renderUngroupedSection(liveTabs: LiveTab[]): HTMLElement {
   const section = el('div', { className: 'section' });
-  section.appendChild(el('div', { className: 'section-title' }, 'UNGROUPED TABS'));
+  const title = el(
+    'div',
+    { className: 'section-title' },
+    `${ungroupedSectionCollapsed ? '▸' : '▾'} UNGROUPED TABS`
+  );
+  title.addEventListener('click', () => {
+    ungroupedSectionCollapsed = !ungroupedSectionCollapsed;
+    render();
+  });
+  section.appendChild(title);
+
+  if (ungroupedSectionCollapsed) {
+    return section;
+  }
 
   if (liveTabs.length === 0) {
     section.appendChild(el('div', { className: 'empty-msg' }, 'No open ungrouped tabs.'));
@@ -307,9 +338,9 @@ function renderUngroupedSection(liveTabs: LiveTab[]): HTMLElement {
 
   for (const liveTab of liveTabs) {
     const tab = liveTab.tab;
-    const url = normalizeUrl(tab.url);
+    const rawUrl = tab.url ?? '';
     const row = el('div', { className: 'tab-item' });
-    row.appendChild(el('span', { className: 'tab-title', title: url }, tab.title ?? url));
+    row.appendChild(el('span', { className: 'tab-title', title: rawUrl }, tab.title ?? rawUrl));
 
     const actions = el('div', { style: 'display:flex;align-items:center;gap:4px;' });
     actions.appendChild(getBadge(liveTab.syncStatus));
@@ -318,7 +349,7 @@ function renderUngroupedSection(liveTabs: LiveTab[]): HTMLElement {
       actions.appendChild(
         btn('Remove', 'btn btn-danger', async () => {
           clearError();
-          const result = await removeTab(url);
+          const result = await removeTab(rawUrl);
           if (result && 'error' in result) {
             setError(result.error);
           } else {
@@ -330,7 +361,7 @@ function renderUngroupedSection(liveTabs: LiveTab[]): HTMLElement {
       actions.appendChild(
         btn('Save', 'btn', async () => {
           clearError();
-          const result = await saveTab(url, tab.title ?? url, tab.pinned);
+          const result = await saveTab(rawUrl, tab.title ?? rawUrl, tab.pinned);
           if (result && 'error' in result) {
             setError(result.error);
           } else {
@@ -444,6 +475,7 @@ export async function render(): Promise<void> {
   const app = document.getElementById('app');
   if (!app) return;
 
+  const scrollY = window.scrollY;
   app.innerHTML = '';
 
   try {
@@ -462,4 +494,6 @@ export async function render(): Promise<void> {
   } catch (err) {
     app.appendChild(el('div', { className: 'error-msg' }, String(err)));
   }
+
+  window.scrollTo(0, scrollY);
 }
