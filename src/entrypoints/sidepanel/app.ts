@@ -35,6 +35,9 @@ let groupsSectionCollapsed = false;
 let ungroupedSectionCollapsed = false;
 const groupExpanded = new Map<string, boolean>();
 
+let renderInFlight = false;
+let renderQueued = false;
+
 function setError(msg: string) {
   errorMessage = msg;
   render();
@@ -140,7 +143,7 @@ async function buildLiveModel(): Promise<{
     const groupTabs = (tabsByGroupId.get(group.id) ?? []).sort((a, b) => a.index - b.index);
     const savedGroup = savedGroupByTitle.get(title);
     const liveUrls = uniqueSortedUrls(groupTabs.map((tab) => normalizeUrl(tab.url)));
-    const savedUrls = uniqueSortedUrls((savedGroup?.tabs ?? []).map((tab) => tab.url));
+    const savedUrls = uniqueSortedUrls((savedGroup?.tabs ?? []).map((tab) => normalizeUrl(tab.url)));
 
     let syncStatus: SyncStatus = 'unsaved';
     if (savedGroup) {
@@ -472,8 +475,14 @@ function renderClosedSection(
 }
 
 export async function render(): Promise<void> {
+  if (renderInFlight) {
+    renderQueued = true;
+    return;
+  }
+  renderInFlight = true;
+
   const app = document.getElementById('app');
-  if (!app) return;
+  if (!app) { renderInFlight = false; return; }
 
   const scrollY = window.scrollY;
   app.innerHTML = '';
@@ -496,4 +505,9 @@ export async function render(): Promise<void> {
   }
 
   window.scrollTo(0, scrollY);
+  renderInFlight = false;
+  if (renderQueued) {
+    renderQueued = false;
+    render();
+  }
 }
