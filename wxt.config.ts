@@ -7,7 +7,7 @@ export default defineConfig({
     description: 'Save and restore tab sessions with groups',
     version: '1.0.0',
     minimum_chrome_version: '123',
-    permissions: ['tabs', 'tabGroups', 'storage', 'sidePanel', 'windows', 'contextMenus'],
+    permissions: ['tabs', 'tabGroups', 'storage', 'sidePanel', 'windows'],
     side_panel: {
       default_path: 'sidepanel/index.html',
     },
