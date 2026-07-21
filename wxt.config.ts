@@ -2,6 +2,8 @@ import { defineConfig } from 'wxt';
 
 export default defineConfig({
   srcDir: 'src',
+  outDir: 'chrome-extension',
+  outDirTemplate: '.',
   manifest: {
     name: 'tab-saver',
     description: 'Save and restore tab sessions with groups',

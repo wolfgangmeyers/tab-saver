@@ -22,7 +22,7 @@ Then in Chrome:
 1. Go to `chrome://extensions`
 2. Enable **Developer mode** (top right)
 3. Click **Load unpacked**
-4. Select the `.output/chrome-mv3/` directory
+4. Select the `chrome-extension/` directory
 
 The extension adds a side panel accessible from the toolbar.
 
